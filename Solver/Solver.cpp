@@ -382,6 +382,7 @@ bool Solver::optimizePlainModel(Solution &sln) {
         for (ID n = 0; n < nodeNum; ++n) {
             if (mp.isTrue(isCenter.at(n))) { centers.Add(n); }
         }
+        return true;
     }
 
     return false;
