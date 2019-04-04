@@ -198,6 +198,8 @@ public:
 protected:
     void init();
     bool optimize(Solution &sln, ID workerId = 0); // optimize by a single worker.
+
+    bool optimizePlainModel(Solution &sln);
     #pragma endregion Method
 
     #pragma region Field

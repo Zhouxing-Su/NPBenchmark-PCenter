@@ -10,6 +10,8 @@
 
 #include <cmath>
 
+#include "MpSolver.h"
+
 
 using namespace std;
 
@@ -300,31 +302,89 @@ void Solver::init() {
 bool Solver::optimize(Solution &sln, ID workerId) {
     Log(LogSwitch::Szx::Framework) << "worker " << workerId << " starts." << endl;
 
-    ID nodeNum = input.graph().nodenum();
-    ID centerNum = input.centernum();
-
-    // reset solution state.
-    bool status = true;
-    auto &centers(*sln.mutable_centers());
-    centers.Resize(centerNum, Problem::InvalidId);
-
-    // TODO[0]: replace the following random assignment with your own algorithm.
-    Sampling sampler(rand, centerNum);
-    for (ID n = 0; !timer.isTimeOut() && (n < nodeNum); ++n) {
-        ID center = sampler.replaceIndex();
-        if (center >= 0) { centers[center] = n; }
-    }
-
-    sln.coverRadius = 0; // record obj.
-    for (ID n = 0; n < nodeNum; ++n) {
-        for (auto c = centers.begin(); c != centers.end(); ++c) {
-            if (aux.adjMat.at(n, *c) < aux.coverRadii[n]) { aux.coverRadii[n] = aux.adjMat.at(n, *c); }
-        }
-        if (sln.coverRadius < aux.coverRadii[n]) { sln.coverRadius = aux.coverRadii[n]; }
-    }
+    bool status = optimizePlainModel(sln);
 
     Log(LogSwitch::Szx::Framework) << "worker " << workerId << " ends." << endl;
     return status;
+}
+
+bool Solver::optimizePlainModel(Solution &sln) {
+    ID nodeNum = input.graph().nodenum();
+
+    // reset solution state.
+    auto &centers(*sln.mutable_centers());
+    centers.Reserve(input.centernum());
+
+    MpSolver mp;
+
+    // add decision variables.
+    Arr2D<MpSolver::DecisionVar> isServing(nodeNum, nodeNum);
+    for (auto y = isServing.begin(); y != isServing.end(); ++y) {
+        *y = mp.addVar(MpSolver::VariableType::Bool, 0, 1, 0);
+    }
+
+    Arr<MpSolver::DecisionVar> isCenter(nodeNum);
+    for (auto x = isCenter.begin(); x != isCenter.end(); ++x) {
+        *x = mp.addVar(MpSolver::VariableType::Bool, 0, 1, 0);
+    }
+
+    MpSolver::DecisionVar maxDist = mp.addVar(MpSolver::VariableType::Real, 0, MpSolver::MaxReal, 0);
+
+    // set objective.
+    mp.addObjective(maxDist, MpSolver::OptimaOrientation::Minimize);
+
+    // add constraints.
+    // p centers.
+    MpSolver::LinearExpr centerNum;
+    for (auto y = isCenter.begin(); y != isCenter.end(); ++y) {
+        centerNum += *y;
+    }
+    //mp.addConstraint(centerNum == input.centernum());
+    mp.addConstraint(centerNum <= input.centernum());
+
+    // nodes can only be served by centers.
+    for (ID c = 0; c < nodeNum; ++c) {
+        for (ID n = 0; n < nodeNum; ++n) {
+            mp.addConstraint(isServing.at(c, n) <= isCenter.at(c));
+        }
+    }
+
+    // centers will serve themselves.
+    //for (ID c = 0; c < nodeNum; ++c) {
+    //    mp.addConstraint(isServing.at(c, c) == isCenter.at(c));
+    //}
+
+    // each node is served by 1 center only.
+    for (ID n = 0; n < nodeNum; ++n) {
+        MpSolver::LinearExpr centerNumPerNode;
+        for (ID c = 0; c < nodeNum; ++c) {
+            centerNumPerNode += isServing.at(c, n);
+        }
+        //mp.addConstraint(centerNumPerNode == 1);
+        mp.addConstraint(centerNumPerNode >= 1);
+    }
+
+    // lower bound of the greatest distance.
+    for (ID n = 0; n < nodeNum; ++n) {
+        MpSolver::LinearExpr distance;
+        for (ID c = 0; c < nodeNum; ++c) {
+            distance += isServing.at(c, n) * aux.adjMat.at(c, n);
+        }
+        mp.addConstraint(maxDist >= distance);
+    }
+
+    // solve model.
+    mp.setOutput(true);
+
+    // record decision.
+    if (mp.optimize()) {
+        sln.coverRadius = lround(mp.getObjectiveValue());
+        for (ID n = 0; n < nodeNum; ++n) {
+            if (mp.isTrue(isCenter.at(n))) { centers.Add(n); }
+        }
+    }
+
+    return false;
 }
 #pragma endregion Solver
 
