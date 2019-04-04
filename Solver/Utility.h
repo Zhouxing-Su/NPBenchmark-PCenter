@@ -397,7 +397,7 @@ public:
 
     static Millisecond toMillisecond(double second) {
         #if UTILITY_TIMER_CPP_STYLE
-        return Millisecond(static_cast<int>(second * MillisecondsPerSecond));
+        return Millisecond(static_cast<long long>(second * MillisecondsPerSecond));
         #else
         return static_cast<Millisecond>(second * MillisecondsPerSecond);
         #endif // UTILITY_TIMER_CPP_STYLE
