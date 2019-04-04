@@ -28,6 +28,9 @@
     <Filter Include="Solver\Protocol">
       <UniqueIdentifier>{cfb319b9-b506-4146-b7d4-26df65b98a13}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Solver\MpSolver">
+      <UniqueIdentifier>{f2ac7845-4cfb-44a1-9260-626b2ae017ea}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="ThreadPool.h">
@@ -63,6 +66,15 @@
     <ClInclude Include="..\Solver\PCenter.pb.h">
       <Filter>Solver\Protocol</Filter>
     </ClInclude>
+    <ClInclude Include="..\Solver\MpSolverBase.h">
+      <Filter>Solver\MpSolver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Solver\MpSolverGurobi.h">
+      <Filter>Solver\MpSolver</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Solver\MpSolver.h">
+      <Filter>Solver\MpSolver</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Main.cpp">
@@ -82,6 +94,9 @@
     </ClCompile>
     <ClCompile Include="..\Solver\PCenter.pb.cc">
       <Filter>Solver\Protocol</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Solver\MpSolverGurobi.cpp">
+      <Filter>Solver\MpSolver</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

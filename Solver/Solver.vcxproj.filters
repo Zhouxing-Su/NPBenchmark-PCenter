@@ -19,6 +19,9 @@
     <Filter Include="Protocol">
       <UniqueIdentifier>{8d2f103b-4d4e-4307-a086-40fe56bbeb04}</UniqueIdentifier>
     </Filter>
+    <Filter Include="MpSolver">
+      <UniqueIdentifier>{6afd989d-4a90-468f-9cbb-3b4a0523433e}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Config.h">
@@ -48,6 +51,15 @@
     <ClInclude Include="PCenter.pb.h">
       <Filter>Protocol</Filter>
     </ClInclude>
+    <ClInclude Include="MpSolverBase.h">
+      <Filter>MpSolver</Filter>
+    </ClInclude>
+    <ClInclude Include="MpSolverGurobi.h">
+      <Filter>MpSolver</Filter>
+    </ClInclude>
+    <ClInclude Include="MpSolver.h">
+      <Filter>MpSolver</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Main.cpp">
@@ -64,6 +76,9 @@
     </ClCompile>
     <ClCompile Include="PCenter.pb.cc">
       <Filter>Protocol</Filter>
+    </ClCompile>
+    <ClCompile Include="MpSolverGurobi.cpp">
+      <Filter>MpSolver</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>
