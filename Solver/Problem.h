@@ -63,6 +63,8 @@ public:
 
     static constexpr double TopologicalGraphObjScale = 1;
     static constexpr double GeometricalGraphObjScale = 100;
+
+    static constexpr bool IsUndirectedGraph = true;
     #pragma endregion Constant
 
     #pragma region Constructor

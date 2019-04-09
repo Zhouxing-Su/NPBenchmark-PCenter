@@ -27,7 +27,7 @@ public:
     using Row = std::vector<char*>;
 
 
-    static constexpr char CommaChar = ';';
+    static constexpr char CommaChar = ',';
 
 
     const std::vector<Row>& scan(std::ostringstream &oss) {

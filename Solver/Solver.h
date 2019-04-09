@@ -147,7 +147,8 @@ public:
         String visualizPath(const T &msg) const { return DefaultVisualizationDir() + friendlyInstName() + "." + localTime + "." + std::to_string(msg) + ".html"; }
         String friendlyInstName() const { // friendly to file system (without special char).
             auto pos = instPath.find_last_of('/');
-            return (pos == String::npos) ? instPath : instPath.substr(pos + 1);
+            String filename = (pos == String::npos) ? instPath : instPath.substr(pos + 1);
+            return filename.substr(0, filename.length() - 5); // drop ".json".
         }
         String friendlyLocalTime() const { // friendly to human.
             return localTime.substr(0, 4) + "-" + localTime.substr(4, 2) + "-" + localTime.substr(6, 2)
@@ -200,6 +201,7 @@ protected:
     bool optimize(Solution &sln, ID workerId = 0); // optimize by a single worker.
 
     bool optimizePlainModel(Solution &sln);
+    bool optimizeDecisionModel(Solution &sln);
     #pragma endregion Method
 
     #pragma region Field
@@ -211,7 +213,9 @@ public:
         double objScale;
 
         Arr2D<Length> adjMat; // adjMat[i][j] is the distance of the edge which goes from i to j.
-        Arr<Length> coverRadii; // coverRadii[n] is the length of its shortest serve arc.
+        Map<Length, ID> distCount; // distCount[l] is the occurance count of distance l.
+
+        Length refObj; // reference objective value.
     } aux;
 
     Environment env;

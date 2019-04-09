@@ -11,6 +11,7 @@
 #include <cmath>
 
 #include "MpSolver.h"
+#include "CsvReader.h"
 
 
 using namespace std;
@@ -277,8 +278,7 @@ void Solver::init() {
         }
 
         Timer timer(30s);
-        constexpr bool IsUndirectedGraph = true;
-        IsUndirectedGraph
+        Problem::IsUndirectedGraph
             ? Floyd::findAllPairsPaths_symmetric(aux.adjMat)
             : Floyd::findAllPairsPaths_asymmetric(aux.adjMat);
         Log(LogSwitch::Preprocess) << "Floyd takes " << timer.elapsedSeconds() << " seconds." << endl;
@@ -287,22 +287,45 @@ void Solver::init() {
         for (ID n = 0; n < nodeNum; ++n) {
             double nx = input.graph().nodes(n).x();
             double ny = input.graph().nodes(n).y();
-            for (ID m = 0; m < nodeNum; ++m) {
-                if (n == m) { continue; }
-                aux.adjMat.at(n, m) = static_cast<Length>(aux.objScale * hypot(
+            for (ID m = 0; m < n; ++m) {
+                Length length = lround(aux.objScale * hypot(
                     nx - input.graph().nodes(m).x(), ny - input.graph().nodes(m).y()));
+                aux.adjMat.at(n, m) = length;
+                aux.adjMat.at(m, n) = length;
             }
         }
     }
 
-    aux.coverRadii.init(nodeNum);
-    fill(aux.coverRadii.begin(), aux.coverRadii.end(), Problem::MaxDistance);
+    // load reference results.
+    CsvReader cr;
+    ifstream ifs(Environment::DefaultInstanceDir() + "Baseline.csv");
+    if (!ifs.is_open()) { return; }
+    const List<CsvReader::Row> &rows(cr.scan(ifs));
+    ifs.close();
+    for (auto r = rows.begin(); r != rows.end(); ++r) {
+        if (env.friendlyInstName() != r->front()) { continue; }
+        aux.refObj = lround(aux.objScale * stod((*r)[1]));
+        break;
+    }
+
+    for (auto e = aux.adjMat.begin(); e != aux.adjMat.end(); ++e) { ++aux.distCount[*e]; }
+
+    Log(LogSwitch::Preprocess) << aux.distCount.size() << " different distances." << endl;
+    auto refObj = aux.distCount.find(aux.refObj);
+    auto betterObj = refObj;
+    if (betterObj != aux.distCount.begin()) { --betterObj; }
+    Log(LogSwitch::Preprocess) << "distances: " << aux.distCount.begin()->first;
+    Log(LogSwitch::Preprocess) << " < ... < " << betterObj->first;
+    Log(LogSwitch::Preprocess) << " < " << refObj->first;
+    Log(LogSwitch::Preprocess) << " < " << (++refObj)->first;
+    Log(LogSwitch::Preprocess) << " < ... < " << aux.distCount.rbegin()->first << endl;
 }
 
 bool Solver::optimize(Solution &sln, ID workerId) {
     Log(LogSwitch::Szx::Framework) << "worker " << workerId << " starts." << endl;
 
-    bool status = optimizePlainModel(sln);
+    //bool status = optimizePlainModel(sln);
+    bool status = optimizeDecisionModel(sln);
 
     Log(LogSwitch::Szx::Framework) << "worker " << workerId << " ends." << endl;
     return status;
@@ -329,9 +352,6 @@ bool Solver::optimizePlainModel(Solution &sln) {
     }
 
     MpSolver::DecisionVar maxDist = mp.addVar(MpSolver::VariableType::Real, 0, MpSolver::MaxReal, 0);
-
-    // set objective.
-    mp.addObjective(maxDist, MpSolver::OptimaOrientation::Minimize);
 
     // add constraints.
     // p centers.
@@ -373,12 +393,93 @@ bool Solver::optimizePlainModel(Solution &sln) {
         mp.addConstraint(maxDist >= distance);
     }
 
+    // set objective.
+    mp.addObjective(maxDist, MpSolver::OptimaOrientation::Minimize);
+
     // solve model.
     mp.setOutput(true);
 
     // record decision.
     if (mp.optimize()) {
         sln.coverRadius = lround(mp.getObjectiveValue());
+        for (ID n = 0; n < nodeNum; ++n) {
+            if (mp.isTrue(isCenter.at(n))) { centers.Add(n); }
+        }
+        return true;
+    }
+
+    return false;
+}
+
+bool Solver::optimizeDecisionModel(Solution &sln) {
+    ID nodeNum = input.graph().nodenum();
+
+    // reset solution state.
+    auto &centers(*sln.mutable_centers());
+    centers.Reserve(input.centernum());
+
+    MpSolver mp;
+
+    // add decision variables.
+    Arr2D<MpSolver::DecisionVar> isServing(nodeNum, nodeNum);
+    for (auto y = isServing.begin(); y != isServing.end(); ++y) {
+        *y = mp.addVar(MpSolver::VariableType::Bool, 0, 1, 0);
+    }
+
+    Arr<MpSolver::DecisionVar> isCenter(nodeNum);
+    for (auto x = isCenter.begin(); x != isCenter.end(); ++x) {
+        *x = mp.addVar(MpSolver::VariableType::Bool, 0, 1, 0);
+    }
+
+    // add constraints.
+    // p centers.
+    MpSolver::LinearExpr centerNum;
+    for (auto y = isCenter.begin(); y != isCenter.end(); ++y) {
+        centerNum += *y;
+    }
+    //mp.addConstraint(centerNum == input.centernum());
+    mp.addConstraint(centerNum <= input.centernum());
+
+    // nodes can only be served by centers.
+    for (ID c = 0; c < nodeNum; ++c) {
+        for (ID n = 0; n < nodeNum; ++n) {
+            mp.addConstraint(isServing.at(c, n) <= isCenter.at(c));
+        }
+    }
+
+    // centers will serve themselves.
+    //for (ID c = 0; c < nodeNum; ++c) {
+    //    mp.addConstraint(isServing.at(c, c) == isCenter.at(c));
+    //}
+
+    // each node is served by 1 center only.
+    for (ID n = 0; n < nodeNum; ++n) {
+        MpSolver::LinearExpr centerNumPerNode;
+        for (ID c = 0; c < nodeNum; ++c) {
+            centerNumPerNode += isServing.at(c, n);
+        }
+        //mp.addConstraint(centerNumPerNode == 1);
+        mp.addConstraint(centerNumPerNode >= 1);
+    }
+
+    // lower bound of the greatest distance.
+    MpSolver::LinearExpr distance;
+    for (ID n = 0; n < nodeNum; ++n) {
+        for (ID c = 0; c < nodeNum; ++c) {
+            Length dist = max(aux.adjMat.at(c, n) - aux.refObj, 0);
+            distance += isServing.at(c, n) * dist;
+        }
+    }
+
+    // set objective.
+    mp.addObjective(distance, MpSolver::OptimaOrientation::Minimize);
+
+    // solve model.
+    mp.setOutput(true);
+
+    // record decision.
+    if (mp.optimize()) {
+        sln.coverRadius = aux.refObj;
         for (ID n = 0; n < nodeNum; ++n) {
             if (mp.isTrue(isCenter.at(n))) { centers.Add(n); }
         }

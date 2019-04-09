@@ -95,7 +95,7 @@ int main(int argc, char *argv[]) {
             double ny = input.graph().nodes(n).y();
             int shortestDist = numeric_limits<int>::max();
             for (auto c = output.centers().begin(); c != output.centers().end(); ++c) { 
-                int dist = static_cast<int>(objScale * hypot(
+                int dist = lround(objScale * hypot(
                     nx - input.graph().nodes(*c).x(), ny - input.graph().nodes(*c).y()));
                 if (dist < shortestDist) { shortestDist = dist; }
             }
