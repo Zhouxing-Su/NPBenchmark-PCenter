@@ -22,7 +22,7 @@ MpSolverGurobi::MpSolverGurobi(Configuration &config) : model(getGlobalEnv()), c
 void MpSolverGurobi::updateStatus() {
     switch (model.get(GRB_IntAttr_Status)) {
     case GRB_OPTIMAL:
-        status = ResultStatus::Optimal; break;
+        status = ResultStatus::Optimal; return;
     case GRB_SUBOPTIMAL:
         status = ResultStatus::Feasible; break;
     case GRB_LOADED:

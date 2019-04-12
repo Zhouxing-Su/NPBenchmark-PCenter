@@ -202,6 +202,11 @@ protected:
 
     bool optimizePlainModel(Solution &sln);
     bool optimizeDecisionModel(Solution &sln);
+    bool optimizeRelaxedDecisionModel(Solution &sln);
+    bool optimizeCuttOffPMedianModel(Solution &sln);
+
+    void printInputStatistics();
+    void tryBetterRadius();
     #pragma endregion Method
 
     #pragma region Field
@@ -213,9 +218,9 @@ public:
         double objScale;
 
         Arr2D<Length> adjMat; // adjMat[i][j] is the distance of the edge which goes from i to j.
-        Map<Length, ID> distCount; // distCount[l] is the occurance count of distance l.
+        List<List<ID>> adjListOrdered; // adjListOrdered[i][j] is the j_th nearest node to node i.
 
-        Length refObj; // reference objective value.
+        Length refRadius; // reference covering radius.
     } aux;
 
     Environment env;
