@@ -89,6 +89,11 @@ int main(int argc, char *argv[]) {
         }
         cerr << "dijkstra takes " << (chrono::duration_cast<chrono::milliseconds>(chrono::steady_clock::now() - start).count() / 1000.0) << " seconds" << endl;
     } else { // geometrical graph.
+        double minX = numeric_limits<double>::max();
+        double maxX = numeric_limits<double>::min();
+        double minY = numeric_limits<double>::max();
+        double maxY = numeric_limits<double>::min();
+
         objScale = GeometricalGraphObjScale;
         for (int n = 0; n < nodeNum; ++n) {
             double nx = input.graph().nodes(n).x();
@@ -100,7 +105,26 @@ int main(int argc, char *argv[]) {
                 if (dist < shortestDist) { shortestDist = dist; }
             }
             if (coverRadius < shortestDist) { coverRadius = shortestDist; }
+
+            minX = min(minX, nx); maxX = max(maxX, nx); minY = min(minY, ny); maxY = max(maxY, ny);
         }
+
+        // visualization.
+        auto pos = outputPath.find_last_of('/');
+        string outputName = (pos == string::npos) ? outputPath : outputPath.substr(pos + 1);
+        constexpr double Margin = 10;
+        double nodeSize = max(1.0, (maxX - minX) / 640);
+        Drawer draw;
+        draw.begin("Visualization/" + outputName + ".html", minX - Margin, minY - Margin, maxX - minX + 2 * Margin, maxY - minY + 2 * Margin);
+        for (int n = 0; n < nodeNum; ++n) {
+            draw.circle(input.graph().nodes(n).x(), input.graph().nodes(n).y(), nodeSize, "000");
+        }
+        double r = coverRadius / objScale;
+        for (auto c = output.centers().begin(); c != output.centers().end(); ++c) {
+            draw.circle(input.graph().nodes(*c).x(), input.graph().nodes(*c).y(), 2 * nodeSize, "F00");
+            draw.circle(input.graph().nodes(*c).x(), input.graph().nodes(*c).y(), r);
+        }
+        draw.end();
     }
 
     int returnCode = (error == 0) ? coverRadius : ~error;
