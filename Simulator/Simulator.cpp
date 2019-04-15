@@ -124,9 +124,31 @@ void Simulator::initDefaultEnvironment() {
     cfg.save(Env::DefaultCfgPath());
 }
 
+void Simulator::exe(const Task &task) {
+    System::makeSureDirExist(SolutionDir());
+
+    ostringstream oss;
+    oss << ProgramName()
+        << " " << Cmd::InstancePathOption() << " " << InstanceDir() << task.instanceName()
+        << " " << Cmd::SolutionPathOption() << " " << SolutionDir() << task.solutionName();
+
+    auto addOption = [&](const String &key, const String &value) {
+        if (!value.empty()) { oss << " " << key << " " << value; }
+    };
+
+    addOption(Cmd::RandSeedOption(), task.randSeed);
+    addOption(Cmd::TimeoutOption(), task.timeout);
+    addOption(Cmd::MaxIterOption(), task.maxIter);
+    addOption(Cmd::JobNumOption(), task.jobNum);
+    addOption(Cmd::RunIdOption(), task.runId);
+    addOption(Cmd::ConfigPathOption(), task.cfgPath);
+    addOption(Cmd::LogPathOption(), task.logPath);
+
+    System::exec(oss.str());
+}
+
 void Simulator::run(const Task &task) {
-    String instanceName(task.instSet + task.instId + ".json");
-    String solutionName(task.instSet + task.instId + ".json");
+    System::makeSureDirExist(SolutionDir());
 
     char argBuf[Cmd::MaxArgNum][Cmd::MaxArgLen];
     char *argv[Cmd::MaxArgNum];
@@ -136,46 +158,25 @@ void Simulator::run(const Task &task) {
     int argc = ArgIndex::ArgStart;
 
     strcpy(argv[argc++], Cmd::InstancePathOption().c_str());
-    strcpy(argv[argc++], (InstanceDir() + instanceName).c_str());
+    strcpy(argv[argc++], (InstanceDir() + task.instanceName()).c_str());
 
-    System::makeSureDirExist(SolutionDir());
     strcpy(argv[argc++], Cmd::SolutionPathOption().c_str());
-    strcpy(argv[argc++], (SolutionDir() + solutionName).c_str());
+    strcpy(argv[argc++], (SolutionDir() + task.solutionName()).c_str());
 
-    if (!task.randSeed.empty()) {
-        strcpy(argv[argc++], Cmd::RandSeedOption().c_str());
-        strcpy(argv[argc++], task.randSeed.c_str());
-    }
+    auto addOption = [&](const String &key, const String &value) {
+        if (!value.empty()) {
+            strcpy(argv[argc++], key.c_str());
+            strcpy(argv[argc++], value.c_str());
+        }
+    };
 
-    if (!task.timeout.empty()) {
-        strcpy(argv[argc++], Cmd::TimeoutOption().c_str());
-        strcpy(argv[argc++], task.timeout.c_str());
-    }
-
-    if (!task.maxIter.empty()) {
-        strcpy(argv[argc++], Cmd::MaxIterOption().c_str());
-        strcpy(argv[argc++], task.maxIter.c_str());
-    }
-
-    if (!task.jobNum.empty()) {
-        strcpy(argv[argc++], Cmd::JobNumOption().c_str());
-        strcpy(argv[argc++], task.jobNum.c_str());
-    }
-
-    if (!task.runId.empty()) {
-        strcpy(argv[argc++], Cmd::RunIdOption().c_str());
-        strcpy(argv[argc++], task.runId.c_str());
-    }
-
-    if (!task.cfgPath.empty()) {
-        strcpy(argv[argc++], Cmd::ConfigPathOption().c_str());
-        strcpy(argv[argc++], task.cfgPath.c_str());
-    }
-
-    if (!task.logPath.empty()) {
-        strcpy(argv[argc++], Cmd::LogPathOption().c_str());
-        strcpy(argv[argc++], task.logPath.c_str());
-    }
+    addOption(Cmd::RandSeedOption(), task.randSeed);
+    addOption(Cmd::TimeoutOption(), task.timeout);
+    addOption(Cmd::MaxIterOption(), task.maxIter);
+    addOption(Cmd::JobNumOption(), task.jobNum);
+    addOption(Cmd::RunIdOption(), task.runId);
+    addOption(Cmd::ConfigPathOption(), task.cfgPath);
+    addOption(Cmd::LogPathOption(), task.logPath);
 
     Cmd::run(argc, argv);
 }
@@ -255,7 +256,7 @@ void Simulator::parallelBenchmark(int repeat) {
             task.instId = *inst;
             task.randSeed = to_string(Random::generateSeed());
             task.runId = to_string(i);
-            tp.push([=]() { run(task); });
+            tp.push([=]() { exe(task); });
             this_thread::sleep_for(1s);
         }
     }

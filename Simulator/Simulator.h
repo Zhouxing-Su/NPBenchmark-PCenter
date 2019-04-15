@@ -27,6 +27,9 @@ class Simulator {
 public:
     // TODO[szx][4]: make it be able to run with serveral env and cfg.
     struct Task {
+        String instanceName() const { return instSet + instId + ".json"; }
+        String solutionName() const { return instanceName(); }
+
         String instSet;
         String instId;
         String randSeed;
@@ -49,7 +52,7 @@ public:
     static String InstanceDir() { return Env::DefaultInstanceDir(); }
     static String SolutionDir() { return Env::DefaultSolutionDir(); }
 
-    static String ProgramName() { return "Simulator.exe";  }
+    static String ProgramName() { return "Solver.exe";  }
 
     enum ArgIndex { ExeName = 0, ArgStart };
     #pragma endregion Constant
@@ -62,7 +65,10 @@ public:
 public:
     static void initDefaultEnvironment();
 
-    // invoke solver with arguments explicitly specifying running information.
+    // invoke solver by ABI with arguments explicitly specifying running information.
+    void exe(const Task &task);
+
+    // invoke solver by API with arguments explicitly specifying running information.
     void run(const Task &task);
     // invoke solver with single argument of environment file path.
     void run(const String &envPath = Env::DefaultEnvPath());
