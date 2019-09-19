@@ -26,6 +26,8 @@ class Problem {
 public:
     struct Input : public pb::PCenter::Input {
         bool load(const String &path) { return pb::load(path, *this); }
+        
+        bool isTopologicalGraph() const { return graph().nodes().empty(); }
     };
 
     struct Output : public pb::PCenter::Output {
@@ -73,8 +75,8 @@ public:
 
     #pragma region Method
 public:
-    static bool isTopologicalGraph(const pb::PCenter::Input &input) {
-        return input.graph().nodes().empty();
+    static bool isIn(double x, double y, double minX, double minY, double maxX, double maxY, double margin = 0) {
+        return (x > minX + margin) && (x < maxX - margin) && (y > minY + margin) && (y < maxY - margin);
     }
     #pragma endregion Method
 

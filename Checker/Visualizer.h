@@ -74,6 +74,9 @@ struct Drawer {
         ofs << "      <rect x='" << x << "' y='" << y << "' width='" << w << "' height='" << h << "' style='fill:#FFFFFF; stroke:black; stroke-width:12'/>" << std::endl << std::endl;
     }
 
+    void line(double x1, double y1, double x2, double y2, const std::string &bcolor) {
+        ofs << "      <line x1='" << x1 << "' y1='" << y1 << "' x2='" << x2 << "' y2='" << y2 << "' stroke='#" << bcolor << "' stroke-width='1'/>" << std::endl;
+    }
     void line(double x1, double y1, double x2, double y2, int layer) {
         static int cutWidth[] = { 10, 8, 8, 6 };
         static std::string cutColor[] = { "cyan", "red", "blue", "orange" };
@@ -85,6 +88,10 @@ struct Drawer {
     }
     void circle(double x, double y, double r, const std::string &bcolor) {
         ofs << "      <circle cx='" << x << "' cy='" << y << "' r='" << r << "' style='fill:#" << bcolor << ";stroke:#" << bcolor << "; stroke-width:2'/>" << std::endl;
+    }
+    void circle(double x, double y, double r, const std::string &label, const std::string &fcolor, const std::string &bcolor) {
+        ofs << "      <circle cx='" << x << "' cy='" << y << "' r='" << r << "' style='fill:#" << bcolor << ";stroke:#" << bcolor << "; stroke-width:2'/>" << std::endl
+            << "      <text x='" << x << "' y='" << y << "' text-anchor='middle' alignment-baseline='middle' style='fill:#" << fcolor << ";font-size:" << FontSize << "'>" << label << "</text>" << std::endl;
     }
 
 

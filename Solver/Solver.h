@@ -103,6 +103,12 @@ public:
         }
 
 
+        struct {
+            double initNodeWeight = 1;
+            double nodeWeightIncBase = 0.125;
+            double nodeWeightIncRate = 2;
+        } crdm;
+
         Algorithm alg = Configuration::Algorithm::Greedy; // OPTIMIZE[szx][3]: make it a list to specify a series of algorithms to be used by each threads in sequence.
         int threadNumPerWorker = (std::min)(1, static_cast<int>(std::thread::hardware_concurrency()));
     };
@@ -198,11 +204,14 @@ public:
 
 protected:
     void init();
+    void reduction();
     bool optimize(Solution &sln, ID workerId = 0); // optimize by a single worker.
 
     bool optimizePlainModel(Solution &sln);
     bool optimizeDecisionModel(Solution &sln);
-    bool optimizeRelaxedDecisionModel(Solution &sln);
+    bool optimizeCoverageRelaxedDecisionModel(Solution &sln, List<double> &nodeWeights);
+    bool optimizeCoverageRelaxedDecisionModel(Solution &sln);
+    bool optimizeCenterNumRelaxedDecisionModel(Solution &sln);
     bool optimizeCuttOffPMedianModel(Solution &sln);
 
     void printInputStatistics();
@@ -218,9 +227,21 @@ public:
         double objScale;
 
         Arr2D<Length> adjMat; // adjMat[i][j] is the distance of the edge which goes from i to j.
+        List<List<ID>> adjList; // adjList[i][j] is the node with the j_th smallest ID to node i.
         List<List<ID>> adjListOrdered; // adjListOrdered[i][j] is the j_th nearest node to node i.
 
         Length refRadius; // reference covering radius.
+
+        List<ID> coveredNodeNums; // coveredNodeNum[i] is the number of nodes covered by node i.
+        ID maxCoveredNodeNum;
+        ID minCoveredNodeNum;
+        List<ID> coveringRanks; // coveringRanks[i] == k means node i is the one with the k_th leastest covered node number.
+
+        // bounding rectangle of the graph, only valid when input.isTopologicalGraph() == true.
+        double minX;
+        double minY;
+        double maxX;
+        double maxY;
     } aux;
 
     Environment env;

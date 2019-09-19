@@ -207,12 +207,12 @@ void Solver::record() const {
         << env.rid << ","
         << env.instPath << ","
         << feasible << "," << (obj - checkerObj) << ",";
-    if (Problem::isTopologicalGraph(input)) {
-        log << obj << ",";
+    if (input.isTopologicalGraph()) {
+        log << checkerObj << ",";
     } else {
         auto oldPrecision = log.precision();
         log.precision(2);
-        log << fixed << setprecision(2) << (obj / aux.objScale) << ",";
+        log << fixed << setprecision(2) << (checkerObj / aux.objScale) << ",";
         log.precision(oldPrecision);
     }
     log << timer.elapsedSeconds() << ","
@@ -269,7 +269,7 @@ void Solver::init() {
     fill(aux.adjMat.begin(), aux.adjMat.end(), Problem::MaxDistance);
     for (ID n = 0; n < nodeNum; ++n) { aux.adjMat.at(n, n) = 0; }
 
-    if (Problem::isTopologicalGraph(input)) {
+    if (input.isTopologicalGraph()) {
         aux.objScale = Problem::TopologicalGraphObjScale;
         for (auto e = input.graph().edges().begin(); e != input.graph().edges().end(); ++e) {
             // only record the last appearance of each edge.
@@ -294,6 +294,19 @@ void Solver::init() {
                 aux.adjMat.at(m, n) = length;
             }
         }
+
+        aux.minX = numeric_limits<double>::max();
+        aux.maxX = numeric_limits<double>::min();
+        aux.minY = numeric_limits<double>::max();
+        aux.maxY = numeric_limits<double>::min();
+        for (int n = 0; n < nodeNum; ++n) {
+            double nx = input.graph().nodes(n).x();
+            double ny = input.graph().nodes(n).y();
+            aux.minX = min(aux.minX, nx);
+            aux.minY = min(aux.minY, ny);
+            aux.maxX = max(aux.maxX, nx);
+            aux.maxY = max(aux.maxY, ny);
+        }
     }
 
     // load reference results.
@@ -313,15 +326,101 @@ void Solver::init() {
     //tryBetterRadius();
 
     // generate ordered adjacency list.
+    aux.adjList.resize(nodeNum);
     aux.adjListOrdered.resize(nodeNum);
     for (ID n = 0; n < nodeNum; ++n) {
         List<ID> &adjNodes(aux.adjListOrdered[n]);
         for (ID m = 0; m < nodeNum; ++m) {
             if (aux.adjMat.at(n, m) <= aux.refRadius) { adjNodes.push_back(m); }
         }
+        aux.adjList[n] = adjNodes;
         sort(adjNodes.begin(), adjNodes.end(), [&](auto l, auto r) {
             return aux.adjMat.at(n, l) < aux.adjMat.at(n, r);
         });
+    }
+
+    aux.coveredNodeNums.resize(nodeNum);
+    aux.maxCoveredNodeNum = 0;
+    aux.minCoveredNodeNum = nodeNum;
+    for (ID n = 0; n < nodeNum; ++n) {
+        ID coveredNodeNum = 0;
+        for (ID m = 0; m < nodeNum; ++m) {
+            if (aux.adjMat.at(n, m) <= aux.refRadius) { ++coveredNodeNum; }
+        }
+        aux.coveredNodeNums[n] = coveredNodeNum;
+        if (aux.maxCoveredNodeNum < coveredNodeNum) { aux.maxCoveredNodeNum = coveredNodeNum; }
+        if (aux.minCoveredNodeNum > coveredNodeNum) { aux.minCoveredNodeNum = coveredNodeNum; }
+    }
+    List<ID> orderedNodes(nodeNum);
+    for (ID n = 0; n < nodeNum; ++n) { orderedNodes[n] = n; }
+    sort(orderedNodes.begin(), orderedNodes.end(), [&](auto l, auto r) {
+        return aux.coveredNodeNums[l] < aux.coveredNodeNums[r];
+    });
+    aux.coveringRanks.resize(nodeNum);
+    for (ID k = 0; k < nodeNum; ++k) { aux.coveringRanks[orderedNodes[k]] = k; }
+
+    //reduction();
+}
+
+void Solver::reduction() {
+    for (ID n = 0; n < input.graph().nodenum(); ++n) {
+        List<ID> &neighborList(aux.adjList[n]);
+        List<ID> n1; // the neighbors of n whose neighborhood contain nodes outside the neighborhood of n.
+        List<ID> n2; // the neighbors of n which are adjacent to N1.
+        List<ID> n3; // the neighbors of n other than N1 and N2.
+        for (auto m = neighborList.begin(); m != neighborList.end(); ++m) {
+            if (*m == n) { continue; }
+            List<ID> &neighborNeighborList(aux.adjList[*m]);
+            auto p = neighborList.begin();
+            for (auto q = neighborNeighborList.begin(); ;) {
+                if ((p == neighborList.end()) || (q == neighborNeighborList.end())) { n2.push_back(*m); break; }
+                if (*p > *q) { n1.push_back(*m); break; } // there are neighbors outside the neighborhood of n.
+                if (*p < *q) { ++p; continue; }
+                if (*p == *q) { ++p; ++q; }
+            }
+        }
+        n2.erase(remove_if(n2.begin(), n2.end(), [&](auto l) {
+            auto p = aux.adjList[l].begin();
+            for (auto q = n1.begin(); ;) {
+                if ((p == aux.adjList[l].end()) || (q == n1.end())) { n3.push_back(l); return true; }
+                if (*p == *q) { return false; } // the neighbor is adjacent to N1.
+                if (*p < *q) { ++p; continue; }
+                if (*p > *q) { ++q; }
+            }
+        }), n2.end());
+
+        if (!n3.empty()) {
+            cerr << n << ": " << n1.size() << " " << n2.size() << " " << n3.size() << endl;
+        }
+    }
+
+    for (ID n = 0; n < input.graph().nodenum(); ++n) {
+        List<ID> &neighborList(aux.adjList[n]);
+        auto onNodePair = [&](ID m) {
+            List<ID> n1; // the neighbors of n&m whose neighborhood contain nodes outside the neighborhood of n&m.
+            List<ID> n2; // the neighbors of n&m which are adjacent to N1.
+            List<ID> n3; // the neighbors of n&m other than N1 and N2.
+            for (auto l = neighborList.begin(); l != neighborList.end(); ++l) {
+                if (*l == n) { continue; }
+                List<ID> &neighborNeighborList(aux.adjList[*l]);
+                auto p = neighborList.begin();
+                for (auto q = neighborNeighborList.begin(); ;) {
+                    if ((p == neighborList.end()) || (q == neighborNeighborList.end())) { n2.push_back(*l); break; }
+                    if (*p > *q) { n1.push_back(*l); break; } // there are neighbors outside the neighborhood of n.
+                    if (*p < *q) { ++p; continue; }
+                    if (*p == *q) { ++p; ++q; }
+                }
+            }
+            for (auto l = aux.adjList[m].begin(); l != aux.adjList[m].end(); ++l) {
+
+            }
+        };
+        for (auto m = neighborList.begin(); m != neighborList.end(); ++m) {
+            onNodePair(*m);
+            for (auto l = aux.adjList[*m].begin(); l != aux.adjList[*m].end(); ++l) {
+                onNodePair(*l);
+            }
+        }
     }
 }
 
@@ -369,10 +468,12 @@ void Solver::tryBetterRadius() {
 bool Solver::optimize(Solution &sln, ID workerId) {
     Log(LogSwitch::Szx::Framework) << "worker " << workerId << " starts." << endl;
 
-    //bool status = optimizePlainModel(sln);
-    //bool status = optimizeDecisionModel(sln);
-    //bool status = optimizeRelaxedDecisionModel(sln);
-    bool status = optimizeCuttOffPMedianModel(sln);
+    bool status = false;
+    //status = optimizePlainModel(sln);
+    //status = optimizeDecisionModel(sln);
+    status = optimizeCoverageRelaxedDecisionModel(sln);
+    //status = optimizeCenterNumRelaxedDecisionModel(sln);
+    //status = optimizeCuttOffPMedianModel(sln);
 
     Log(LogSwitch::Szx::Framework) << "worker " << workerId << " ends." << endl;
     return status;
@@ -485,6 +586,7 @@ bool Solver::optimizeDecisionModel(Solution &sln) {
 
     // solve model.
     mp.setOutput(true);
+    //mp.setMipFocus(MpSolver::MipFocusMode::ImproveFeasibleSolution);
 
     // record decision.
     if (mp.optimize()) {
@@ -498,12 +600,139 @@ bool Solver::optimizeDecisionModel(Solution &sln) {
     return false;
 }
 
-bool Solver::optimizeRelaxedDecisionModel(Solution &sln) {
+bool Solver::optimizeCoverageRelaxedDecisionModel(Solution &sln) {
+    List<double> nodeWeights(input.graph().nodenum(), cfg.crdm.initNodeWeight);
+
+    //for (ID n = 0; n < nodeNum; ++n) {
+    //    nodeWeights[n] = 2 - 1.0 * (aux.coveredNodeNums[n] - aux.minCoveredNodeNum) / (aux.maxCoveredNodeNum - aux.minCoveredNodeNum);
+    //}
+
+    //Map<double, ID> weights;
+    //for (ID n = 0; n < input.graph().nodenum(); ++n) { ++weights[nodeWeights[n]]; }
+    //for (auto n = weights.begin(); n != weights.end(); ++n) {
+    //    Log(LogSwitch::Model) << n->first << " : " << n->second << endl;
+    //}
+    //Log(LogSwitch::Model) << endl;
+
+    //while (!optimizeCoverageRelaxedDecisionModel(sln, nodeWeights)) {}
+
+    optimizeCoverageRelaxedDecisionModel(sln, nodeWeights);
+    return true;
+}
+
+bool Solver::optimizeCoverageRelaxedDecisionModel(Solution &sln, List<double> &nodeWeights) {
     ID nodeNum = input.graph().nodenum();
 
-    constexpr double InitNodeWeight = 1;
-    constexpr double NodeWeightInc = 0.1;
-    List<double> nodeWeights(nodeNum, InitNodeWeight);
+    auto isFixed = [&](ID n) { return aux.coveredNodeNums[n] <= 1; };
+    ID freeCenterNum = input.centernum();
+
+    List<bool> mustCover(nodeNum, false);
+    if (!input.isTopologicalGraph()) {
+        // OPTIMIZE[szx][5]: not relax on certain nodes.
+        //for (ID n = 0; n < nodeNum; ++n) {
+        //    if (Problem::isIn(input.graph().nodes(n).x(), input.graph().nodes(n).y(),
+        //        aux.minX, aux.minY, aux.maxX, aux.maxY, aux.refRadius * 1 / aux.objScale)) {
+        //        continue;
+        //    }
+        //    mustCover[n] = true;
+        //}
+    }
+
+    // reset solution state.
+    auto &centers(*sln.mutable_centers());
+    centers.Clear();
+    centers.Reserve(input.centernum());
+
+    MpSolver mp;
+
+    // add decision variables.
+    Log(LogSwitch::Szx::Model) << "fix nodes:";
+    Arr<MpSolver::DecisionVar> isCenter(nodeNum);
+    for (ID n = 0; n < nodeNum; ++n) {
+        if (isFixed(n)) {
+            --freeCenterNum;
+            Log(LogSwitch::Szx::Model) << " " << n;
+            continue;
+        }
+        isCenter[n] = mp.addVar(MpSolver::VariableType::Bool, 0, 1, 0);
+    }
+    Log(LogSwitch::Szx::Model) << endl;
+
+    Arr<MpSolver::DecisionVar> isCovered(nodeNum);
+    for (ID n = 0; n < nodeNum; ++n) {
+        if (isFixed(n)) { continue; }
+        if (mustCover[n]) { continue; }
+        //v = mp.addVar(MpSolver::VariableType::Bool, 0, 1, 0);
+        isCovered[n] = mp.addVar(MpSolver::VariableType::Real, 0, 1, 0);
+    }
+
+    // add constraints.
+    // p centers.
+    MpSolver::LinearExpr centerNum;
+    for (ID n = 0; n < nodeNum; ++n) { if (!isFixed(n)) { centerNum += isCenter[n]; } }
+    //mp.addConstraint(centerNum == freeCenterNum);
+    mp.addConstraint(centerNum <= freeCenterNum);
+
+    // each node is served by 1 center only.
+    for (ID n = 0; n < nodeNum; ++n) {
+        if (isFixed(n)) { continue; }
+        MpSolver::LinearExpr centerNumPerNode;
+        for (auto c = aux.adjListOrdered[n].begin(); c != aux.adjListOrdered[n].end(); ++c) {
+            centerNumPerNode += isCenter.at(*c);
+        }
+        if (mustCover[n]) {
+            mp.addConstraint(centerNumPerNode >= 1);
+        } else {
+            mp.addConstraint(centerNumPerNode >= isCovered.at(n));
+        }
+    }
+
+    // set objective.
+    MpSolver::LinearExpr coveredNodeNum; // number of covered nodes.
+    for (ID n = 0; n < nodeNum; ++n) {
+        if (isFixed(n)) { continue; }
+        if (mustCover[n]) { continue; }
+        coveredNodeNum += (nodeWeights[n] * isCovered.at(n));
+    }
+    mp.addObjective(coveredNodeNum, MpSolver::OptimaOrientation::Maximize);
+
+    // solve model.
+    mp.setOutput(true);
+    //mp.setMaxThread(4);
+
+    mp.setTimeLimitInSecond(3600);
+
+    // record decision.
+    if (mp.optimize()) {
+        sln.coverRadius = aux.refRadius;
+        for (ID n = 0; n < nodeNum; ++n) {
+            if (isFixed(n) || mp.isTrue(isCenter.at(n))) { centers.Add(n); }
+        }
+
+        Log(LogSwitch::Szx::Postprocess) << "uncovered nodes under radius " << aux.refRadius << ":";
+        for (ID n = 0; n < nodeNum; ++n) {
+            if (isFixed(n) || mustCover[n] || mp.isTrue(isCovered.at(n))) { continue; }
+            nodeWeights[n] += max((nodeWeights[n] - cfg.crdm.initNodeWeight) * cfg.crdm.nodeWeightIncRate, cfg.crdm.nodeWeightIncBase);
+            Length minDist = Problem::MaxDistance;
+            for (auto c = centers.begin(); c != centers.end(); ++c) {
+                minDist = min(aux.adjMat.at(n, *c), minDist);
+            }
+            if (sln.coverRadius < minDist) { sln.coverRadius = minDist; }
+            Log(LogSwitch::Szx::Postprocess) << " " << n << "(" << minDist << " x" << nodeWeights[n] << ")";
+        }
+        Log(LogSwitch::Szx::Postprocess) << endl;
+
+        return sln.coverRadius == aux.refRadius;
+    }
+
+    return false;
+}
+
+bool Solver::optimizeCenterNumRelaxedDecisionModel(Solution &sln) {
+    ID nodeNum = input.graph().nodenum();
+
+    auto isFixed = [&](ID n) { return aux.coveredNodeNums[n] <= 1; };
+    ID freeCenterNum = input.centernum();
 
     // reset solution state.
     auto &centers(*sln.mutable_centers());
@@ -512,42 +741,36 @@ bool Solver::optimizeRelaxedDecisionModel(Solution &sln) {
     MpSolver mp;
 
     // add decision variables.
+    Log(LogSwitch::Szx::Model) << "fix nodes:";
     Arr<MpSolver::DecisionVar> isCenter(nodeNum);
-    for (auto y = isCenter.begin(); y != isCenter.end(); ++y) {
-        *y = mp.addVar(MpSolver::VariableType::Bool, 0, 1, 0);
+    for (ID n = 0; n < nodeNum; ++n) {
+        if (isFixed(n)) {
+            --freeCenterNum;
+            Log(LogSwitch::Szx::Model) << " " << n;
+            continue;
+        }
+        isCenter[n] = mp.addVar(MpSolver::VariableType::Bool, 0, 1, 0);
     }
-
-    Arr<MpSolver::DecisionVar> isCovered(nodeNum);
-    for (auto x = isCovered.begin(); x != isCovered.end(); ++x) {
-        //*x = mp.addVar(MpSolver::VariableType::Bool, 0, 1, 0);
-        *x = mp.addVar(MpSolver::VariableType::Real, 0, 1, 0);
-    }
+    Log(LogSwitch::Szx::Model) << endl;
 
     // add constraints.
-    // p centers.
-    MpSolver::LinearExpr centerNum;
-    for (auto y = isCenter.begin(); y != isCenter.end(); ++y) { centerNum += *y; }
-    //mp.addConstraint(centerNum == input.centernum());
-    mp.addConstraint(centerNum <= input.centernum());
-
     // each node is served by 1 center only.
     for (ID n = 0; n < nodeNum; ++n) {
+        if (isFixed(n)) { continue; }
         MpSolver::LinearExpr centerNumPerNode;
         for (auto c = aux.adjListOrdered[n].begin(); c != aux.adjListOrdered[n].end(); ++c) {
             centerNumPerNode += isCenter.at(*c);
         }
         //mp.addConstraint(centerNumPerNode == 1);
-        mp.addConstraint(centerNumPerNode >= isCovered.at(n));
+        mp.addConstraint(centerNumPerNode >= 1);
     }
 
-    // number of covered nodes.
-    MpSolver::LinearExpr coveredNodeNum;
-    for (ID n = 0; n < nodeNum; ++n) {
-        coveredNodeNum += (nodeWeights[n] * isCovered.at(n));
-    }
+    MpSolver::LinearExpr centerNum;
+    for (ID n = 0; n < nodeNum; ++n) { if (!isFixed(n)) { centerNum += isCenter[n]; } }
+    mp.addConstraint(centerNum >= freeCenterNum);
 
     // set objective.
-    mp.addObjective(coveredNodeNum, MpSolver::OptimaOrientation::Maximize);
+    mp.addObjective(centerNum, MpSolver::OptimaOrientation::Minimize);
 
     // solve model.
     mp.setOutput(true);
@@ -556,23 +779,15 @@ bool Solver::optimizeRelaxedDecisionModel(Solution &sln) {
 
     // record decision.
     if (mp.optimize()) {
-        sln.coverRadius = aux.refRadius;
-        for (ID n = 0; n < nodeNum; ++n) {
-            if (mp.isTrue(isCenter.at(n))) { centers.Add(n); }
+        if (mp.getValue(centerNum) > freeCenterNum) {
+            Log(LogSwitch::Szx::Model) << "too many centers." << endl;
+            return false;
         }
 
-        Log(LogSwitch::Szx::Postprocess) << "uncovered nodes under radius " << aux.refRadius << ":";
+        sln.coverRadius = aux.refRadius;
         for (ID n = 0; n < nodeNum; ++n) {
-            if (mp.isTrue(isCovered.at(n))) { continue; }
-            nodeWeights[n] += NodeWeightInc;
-            Length minDist = Problem::MaxDistance;
-            for (auto c = centers.begin(); c != centers.end(); ++c) {
-                minDist = min(aux.adjMat.at(n, *c), minDist);
-            }
-            if (sln.coverRadius < minDist) { sln.coverRadius = minDist; }
-            Log(LogSwitch::Szx::Postprocess) << " " << n << "(" << minDist << ")";
+            if (isFixed(n) || mp.isTrue(isCenter.at(n))) { centers.Add(n); }
         }
-        Log(LogSwitch::Szx::Postprocess) << endl;
 
         return true;
     }
@@ -582,6 +797,7 @@ bool Solver::optimizeRelaxedDecisionModel(Solution &sln) {
 
 bool Solver::optimizeCuttOffPMedianModel(Solution &sln) {
     ID nodeNum = input.graph().nodenum();
+    auto shouldSkip = [&](ID c, ID n) { return aux.adjMat.at(c, n) > aux.refRadius * 2; };
 
     // reset solution state.
     auto &centers(*sln.mutable_centers());
@@ -591,8 +807,11 @@ bool Solver::optimizeCuttOffPMedianModel(Solution &sln) {
 
     // add decision variables.
     Arr2D<MpSolver::DecisionVar> isServing(nodeNum, nodeNum);
-    for (auto x = isServing.begin(); x != isServing.end(); ++x) {
-        *x = mp.addVar(MpSolver::VariableType::Bool, 0, 1, 0);
+    for (ID c = 0; c < nodeNum; ++c) {
+        for (ID n = 0; n < nodeNum; ++n) {
+            if (shouldSkip(c, n)) { continue; }
+            isServing.at(c, n) = mp.addVar(MpSolver::VariableType::Bool, 0, 1, 0);
+        }
     }
 
     Arr<MpSolver::DecisionVar> isCenter(nodeNum);
@@ -610,6 +829,8 @@ bool Solver::optimizeCuttOffPMedianModel(Solution &sln) {
     // nodes can only be served by centers.
     for (ID c = 0; c < nodeNum; ++c) {
         for (ID n = 0; n < nodeNum; ++n) {
+            if (shouldSkip(c, n)) { continue; }
+            //mp.addConstraint(isServing.at(c, n) == isCenter.at(c));
             mp.addConstraint(isServing.at(c, n) <= isCenter.at(c));
         }
     }
@@ -618,22 +839,22 @@ bool Solver::optimizeCuttOffPMedianModel(Solution &sln) {
     for (ID n = 0; n < nodeNum; ++n) {
         MpSolver::LinearExpr centerNumPerNode;
         for (ID c = 0; c < nodeNum; ++c) {
+            if (shouldSkip(c, n)) { continue; }
             centerNumPerNode += isServing.at(c, n);
         }
         //mp.addConstraint(centerNumPerNode == 1);
         mp.addConstraint(centerNumPerNode >= 1);
     }
 
-    // distance to uncovered nodes.
-    MpSolver::LinearExpr distance;
+    // set objective.
+    MpSolver::LinearExpr distance; // distance to uncovered nodes.
     for (ID n = 0; n < nodeNum; ++n) {
         for (ID c = 0; c < nodeNum; ++c) {
+            if (shouldSkip(c, n)) { continue; }
             Length dist = max(aux.adjMat.at(c, n) - aux.refRadius, 0);
             distance += isServing.at(c, n) * dist;
         }
     }
-
-    // set objective.
     mp.addObjective(distance, MpSolver::OptimaOrientation::Minimize);
 
     // solve model.
@@ -652,6 +873,7 @@ bool Solver::optimizeCuttOffPMedianModel(Solution &sln) {
 
     return false;
 }
+
 #pragma endregion Solver
 
 }

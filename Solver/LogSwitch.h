@@ -24,7 +24,7 @@ struct LogSwitch {
         Preprocess = Log::Level::On,
         Postprocess = Log::Level::On,
         Config = Log::Level::On,
-        Model = Log::Level::Info,
+        Model = Log::Level::Debug,
         MpSolver = Log::Level::On,
         Checker = Log::Level::On,
     };
